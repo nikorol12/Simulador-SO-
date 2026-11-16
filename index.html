@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Simulador de Sistemas Operativos - AE4</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- HEADER -->
+  <header class="bg-slate-900 border-b border-slate-800 px-4 py-3 shadow-md sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-lg shadow-inner">
+          SO
+        </div>
+        <div>
+          <h1 class="text-lg font-bold text-white leading-tight">Simulador de Sistemas Operativos</h1>
+          <p class="text-xs text-slate-400">Planificación de CPU · Memoria Continua · Paginación (TLB/Swap) · Segmentación</p>
+        </div>
+      </div>
+
+      <!-- NAVIGATION TABS -->
+      <nav class="flex flex-wrap gap-1.5" id="nav-tabs">
+        <button onclick="switchTab('cpu')" data-tab="cpu" class="tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold transition bg-indigo-600 text-white shadow">
+          1. Planificación CPU
+        </button>
+        <button onclick="switchTab('mem')" data-tab="mem" class="tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold transition bg-slate-800 text-slate-300 hover:bg-slate-700">
+          2. Memoria Continua
+        </button>
+        <button onclick="switchTab('pag')" data-tab="pag" class="tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold transition bg-slate-800 text-slate-300 hover:bg-slate-700">
+          3. Paginación + TLB
+        </button>
+        <button onclick="switchTab('seg')" data-tab="seg" class="tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold transition bg-slate-800 text-slate-300 hover:bg-slate-700">
+          4. Segmentación
+        </button>
+        <button onclick="openCompareModal()" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition bg-emerald-600/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-600/30 flex items-center gap-1">
+          <span>📊</span> Comparar Políticas
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- GLOBAL SIMULATION CONTROL BAR -->
+  <div class="bg-slate-800/80 border-b border-slate-700/80 px-4 py-2.5">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+      <div class="flex flex-wrap items-center gap-2">
+        <button id="btn-step" onclick="stepSimulation()" class="px-3.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold shadow flex items-center gap-1.5 transition">
+          <span>⏭️</span> Paso a Paso
+        </button>
+        <button id="btn-play" onclick="toggleAutoPlay()" class="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow flex items-center gap-1.5 transition">
+          <span id="play-icon">▶️</span> <span id="play-text">Automático</span>
+        </button>
+        <button onclick="resetCurrentModule()" class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold transition">
+          🔄 Reiniciar
+        </button>
+
+        <div class="flex items-center gap-1.5 ml-2 bg-slate-900/70 px-2.5 py-1 rounded-lg border border-slate-700">
+          <span class="text-[11px] text-slate-400">Velocidad:</span>
+          <select id="sim-speed" onchange="updateSpeed()" class="bg-transparent text-xs text-slate-200 focus:outline-none">
+            <option value="1200" class="bg-slate-900">Lenta (1.2s)</option>
+            <option value="700" selected class="bg-slate-900">Normal (0.7s)</option>
+            <option value="250" class="bg-slate-900">Rápida (0.25s)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-1.5">
+          <label class="text-xs text-slate-400">Escenario:</label>
+          <select id="scenario-selector" onchange="loadSelectedScenario()" class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+          </select>
+        </div>
+        <div class="bg-slate-900 border border-slate-700 px-3 py-1 rounded-lg flex items-center gap-2">
+          <span class="text-[11px] text-slate-400 uppercase tracking-wider">Reloj / Paso:</span>
+          <span id="global-clock" class="font-mono-code text-sm font-bold text-amber-400">0</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN WORKSPACE -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+    <!-- LEFT/MAIN COLUMN (8 cols) -->
+    <div class="lg:col-span-8 flex flex-col gap-4">
+
+      <!-- ========================================================= -->
+      <!-- MÓDULO 1: PLANIFICACIÓN DE PROCESOS (CPU)                 -->
+      <!-- ========================================================= -->
+      <section id="mod-cpu" class="module-section flex flex-col gap-4">
+        <!-- Configuración CPU -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow">
+          <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <h2 class="text-sm font-bold text-white flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-indigo-500"></span> Configuración de Planificación de CPU
+            </h2>
+            <div class="flex flex-wrap items-center gap-3">
+              <div class="flex items-center gap-1.5">
+                <label class="text-xs text-slate-400">Algoritmo:</label>
+                <select id="cpu-algo" onchange="resetCPU(false)" class="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white font-semibold">
+                  <option value="FIFO">FIFO (FCFS)</option>
+                  <option value="RR">Round Robin (RR)</option>
+                  <option value="SJF">SJF (No Apropiativo)</option>
+                  <option value="SRTF">SRTF (SJF Apropiativo)</option>
+                </select>
+              </div>
+              <div id="cpu-quantum-wrap" class="hidden flex items-center gap-1.5">
+                <label class="text-xs text-slate-400">Quantum:</label>
+                <input id="cpu-quantum" type="number" min="1" max="20" value="2" onchange="resetCPU(false)" class="w-14 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white text-center font-mono-code" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Agregar proceso rápido -->
+          <div class="flex flex-wrap items-end gap-2 pt-2 border-t border-slate-800">
+            <div>
+              <label class="block text-[11px] text-slate-400 mb-0.5">Nombre</label>
+              <input id="cpu-new-name" type="text" placeholder="P5" class="w-20 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white" />
+            </div>
+            <div>
+              <label class="block text-[11px] text-slate-400 mb-0.5">Llegada (t)</label>
+              <input id="cpu-new-arr" type="number" min="0" value="0" class="w-20 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white font-mono-code" />
+            </div>
+            <div>
+              <label class="block text-[11px] text-slate-400 mb-0.5">Ráfaga CPU</label>
+              <input id="cpu-new-burst" type="number" min="1" value="4" class="w-20 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white font-mono-code" />
+            </div>
+            <button onclick="addCPUProcess()" class="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition">
+              + Agregar Proceso
+            </button>
+          </div>
+        </div>
+
+        <!-- Diagrama de Gantt & Cola de Listos -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Diagrama de Gantt Dinámico</h3>
+            <span id="cpu-status-msg" class="text-xs font-medium text-indigo-400">Listo para iniciar</span>
+          </div>
+
+          <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 overflow-x-auto">
+            <div id="cpu-gantt-bar" class="flex items-stretch min-h-[48px] gap-0.5">
+              <div class="text-xs text-slate-500 italic flex items-center">Presiona "Paso a Paso" o "Automático" para comenzar...</div>
+            </div>
+            <div id="cpu-gantt-ticks" class="flex items-center mt-1 text-[10px] font-mono-code text-slate-400"></div>
+          </div>
+
+          <!-- Cola de Listos -->
+          <div class="mt-3 flex flex-wrap items-center gap-2">
+            <span class="text-xs font-semibold text-slate-400">Cola de Listos (Ready Queue):</span>
+            <div id="cpu-ready-queue" class="flex flex-wrap gap-1.5">
+              <span class="text-xs text-slate-500 italic">Vacía</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Métricas CPU -->
+        <div class="grid grid-cols-3 gap-3">
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-3">
+            <div class="text-[11px] text-slate-400">T. Espera Promedio</div>
+            <div id="cpu-avg-wait" class="text-xl font-bold font-mono-code text-sky-400 mt-0.5">0.00</div>
+          </div>
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-3">
+            <div class="text-[11px] text-slate-400">T. Retorno Promedio</div>
+            <div id="cpu-avg-turn" class="text-xl font-bold font-mono-code text-indigo-400 mt-0.5">0.00</div>
+          </div>
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-3">
+            <div class="text-[11px] text-slate-400">Uso de CPU</div>
+            <div id="cpu-util" class="text-xl font-bold font-mono-code text-emerald-400 mt-0.5">0.0%</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================= -->
+      <!-- MÓDULO 2: MEMORIA CONTINUA                                -->
+      <!-- ========================================================= -->
+      <section id="mod-mem" class="module-section hidden flex flex-col gap-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow">
+          <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <h2 class="text-sm font-bold text-white flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Configuración de Memoria Continua
+            </h2>
+            <div class="flex flex-wrap items-center gap-2">
+              <div class="flex items-center gap-1">
+                <label class="text-xs text-slate-400">Particionamiento:</label>
+                <select id="mem-mode" onchange="resetMem(false)" class="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white">
+                  <option value="variable">Variable (Dinámico)</option>
+                  <option value="fixed">Fijo (Particiones predefinidas)</option>
+                </select>
+              </div>
+              <div class="flex items-center gap-1">
+                <label class="text-xs text-slate-400">Política:</label>
+                <select id="mem-policy" onchange="resetMem(false)" class="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white font-semibold">
+                  <option value="first">First Fit (Primer Ajuste)</option>
+                  <option value="best">Best Fit (Mejor Ajuste)</option>
+                  <option value="worst">Worst Fit (Peor Ajuste)</option>
+                </select>
+              </div>
+              <div class="flex items-center gap-1">
+                <label class="text-xs text-slate-400">RAM (KB):</label>
+                <input id="mem-total" type="number" min="128" max="8192" step="64" value="1024" onchange="resetMem(false)" class="w-20 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white font-mono-code" />
+              </div>
+              <button onclick="compactMemory()" class="px-2.5 py-1 rounded-lg bg-amber-600/20 text-amber-300 border border-amber-500/40 hover:bg-amber-600/30 text-xs font-semibold transition">
+                🗜️ Compactar
+              </button>
+            </div>
+          </div>
+
+          <!-- Agregar proceso a memoria -->
+          <div class="flex flex-wrap items-end gap-2 pt-2 border-t border-slate-800">
+            <div>
+              <label class="block text-[11px] text-slate-400 mb-0.5">Proceso</label>
+              <input id="mem-new-name" type="text" placeholder="P6" class="w-20 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white" />
+            </div>
+            <div>
+              <label class="block text-[11px] text-slate-400 mb-0.5">Tamaño (KB)</label>
+              <input id="mem-new-size" type="number" min="16" max="2048" value="128" class="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white font-mono-code" />
+            </div>
+            <div>
+              <label class="block text-[11px] text-slate-400 mb-0.5">Duración (ticks)</label>
+              <input id="mem-new-dur" type="number" min="1" max="50" value="4" class="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white font-mono-code" />
+            </div>
+            <button onclick="addMemProcess()" class="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition">
+              + Solicitar Memoria
+            </button>
+          </div>
+        </div>
+
+        <!-- Mapa Visual de Memoria -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Mapa Físico de Memoria Principal</h3>
+            <span id="mem-event-msg" class="text-xs text-emerald-400 font-medium">Memoria inicializada</span>
+          </div>
+
+          <!-- Barra proporcional -->
+          <div id="mem-visual-bar" class="w-full h-16 bg-slate-950 border border-slate-700 rounded-lg overflow-hidden flex">
+          </div>
+
+          <!-- Detalle tabular de bloques -->
+          <div class="mt-3 overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead>
+                <tr class="text-slate-400 border-b border-slate-800">
+                  <th class="py-1.5 px-2">Bloque</th>
+                  <th class="py-1.5 px-2">Dir. Base</th>
+                  <th class="py-1.5 px-2">Tamaño</th>
+                  <th class="py-1.5 px-2">Estado</th>
+                  <th class="py-1.5 px-2">Proceso / Fragmentación Interna</th>
+                  <th class="py-1.5 px-2 text-right">Acción</th>
+                </tr>
+              </thead>
+              <tbody id="mem-blocks-table" class="divide-y divide-slate-800/60 font-mono-code"></tbody>
+            </table>
+          </div>
+
+          <!-- Cola de espera de procesos rechazados -->
+          <div class="mt-3 pt-3 border-t border-slate-800 flex flex-wrap items-center gap-2">
+            <span class="text-xs font-semibold text-amber-400">Cola de Espera (Sin hueco suficiente):</span>
+            <div id="mem-wait-queue" class="flex flex-wrap gap-1.5">
+              <span class="text-xs text-slate-500 italic">Vacía</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Métricas Memoria Continua -->
+        <div class="grid grid-cols-3 gap-3">
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-3">
+            <div class="text-[11px] text-slate-400">Memoria Libre Total</div>
+            <div id="mem-free-total" class="text-xl font-bold font-mono-code text-sky-400 mt-0.5">1024 KB</div>
+          </div>
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-3">
+            <div class="text-[11px] text-slate-400">Hueco Libre Máximo</div>
+            <div id="mem-max-hole" class="text-xl font-bold font-mono-code text-emerald-400 mt-0.5">1024 KB</div>
+          </div>
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-3">
+            <div class="text-[11px] text-slate-400">Fragmentación Externa</div>
+            <div id="mem-ext-frag" class="text-xl font-bold font-mono-code text-rose-400 mt-0.5">0 KB (0%)</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================= -->
+      <!-- MÓDULO 3: PAGINACIÓN CON TLB Y SWAP                       -->
+      <!-- ========================================================= -->
+      <section id="mod-pag" class="module-section hidden flex flex-col gap-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <h2 class="text-sm font-bold text-white flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-purple-500"></span> Configuración de Paginación, TLB y Swap
+            </h2>
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+              <label class="text-slate-400">Marcos RAM:
+                <input id="pag-frames" type="number" min="2" max="16" value="4" onchange="resetPag(false)" class="w-12 bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-white font-mono-code ml-1" />
+              </label>
+              <label class="text-slate-400">Tam. Página (B):
+                <select id="pag-size" onchange="resetPag(false)" class="bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-white font-mono-code ml-1">
+                  <option value="256">256 B</option>
+                  <option value="512">512 B</option>
+                  <option value="1024" selected>1024 B (1 KB)</option>
+                  <option value="4096">4096 B (4 KB)</option>
+                </select>
+              </label>
+              <label class="text-slate-400">Entradas TLB:
+                <input id="pag-tlb-size" type="number" min="1" max="8" value="2" onchange="resetPag(false)" class="w-12 bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-white font-mono-code ml-1" />
+              </label>
+              <label class="text-slate-400">Reemp. TLB:
+                <select id="pag-tlb-algo" onchange="resetPag(false)" class="bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-white ml-1">
+                  <option value="FIFO">FIFO</option>
+                  <option value="LRU" selected>LRU</option>
+                </select>
+              </label>
+              <label class="text-slate-400">Reemp. RAM:
+                <select id="pag-ram-algo" onchange="resetPag(false)" class="bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-white ml-1">
+                  <option value="FIFO">FIFO</option>
+                  <option value="LRU" selected>LRU</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <!-- Tiempos para EAT y referencia manual -->
+          <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800 text-xs">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-slate-400">Tiempos (ns):</span>
+              <label class="text-slate-400">TLB <input id="pag-t-tlb" type="number" value="10" onchange="updatePagMetrics()" class="w-12 bg-slate-800 border border-slate-700 rounded px-1 py-0.5 text-white font-mono-code" /></label>
+              <label class="text-slate-400">RAM <input id="pag-t-ram" type="number" value="100" onchange="updatePagMetrics()" class="w-14 bg-slate-800 border border-slate-700 rounded px-1 py-0.5 text-white font-mono-code" /></label>
+              <label class="text-slate-400">Swap <input id="pag-t-swap" type="number" value="5000" onchange="updatePagMetrics()" class="w-16 bg-slate-800 border border-slate-700 rounded px-1 py-0.5 text-white font-mono-code" /></label>
+            </div>
+
+            <div class="flex items-center gap-1.5">
+              <select id="pag-ref-pid" class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white"></select>
+              <input id="pag-ref-addr" type="number" min="0" value="1050" placeholder="Dir. Lógica" class="w-24 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white font-mono-code" />
+              <button onclick="addPagReference()" class="px-2.5 py-1 rounded bg-purple-600 hover:bg-purple-500 text-white font-semibold">
+                + Ref. Lógica
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Traducción Paso a Paso & Cola de Referencias -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Cola de Referencias Lógicas</h3>
+            <span class="text-[11px] text-slate-400">Formato: <code class="text-purple-400">PID : Dir.Lógica (Pág, Offset)</code></span>
+          </div>
+          <div id="pag-ref-queue" class="flex flex-wrap gap-1.5 mb-3"></div>
+
+          <!-- Resultado de la última traducción -->
+          <div id="pag-translation-box" class="bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs font-mono-code">
+            <span class="text-slate-500">Ejecuta un paso para observar la traducción Dirección Lógica → TLB → Tabla de Páginas → Dirección Física.</span>
+          </div>
+        </div>
+
+        <!-- Estructuras: TLB, Marcos RAM, Tabla de Páginas y Swap -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <!-- TLB -->
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-3">
+            <h4 class="text-xs font-bold text-amber-400 uppercase mb-2">Caché TLB</h4>
+            <table class="w-full text-left text-xs font-mono-code">
+              <thead>
+                <tr class="text-slate-400 border-b border-slate-800">
+                  <th class="py-1">PID</th>
+                  <th class="py-1">Pág</th>
+                  <th class="py-1">Marco</th>
+                </tr>
+              </thead>
+              <tbody id="pag-tlb-table" class="divide-y divide-slate-800/60"></tbody>
+            </table>
+          </div>
+
+          <!-- Marcos Físicos RAM -->
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-3">
+            <h4 class="text-xs font-bold text-emerald-400 uppercase mb-2">Marcos de RAM</h4>
+            <table class="w-full text-left text-xs font-mono-code">
+              <thead>
+                <tr class="text-slate-400 border-b border-slate-800">
+                  <th class="py-1">Marco</th>
+                  <th class="py-1">Contenido</th>
+                  <th class="py-1">Dir. Base</th>
+                </tr>
+              </thead>
+              <tbody id="pag-ram-table" class="divide-y divide-slate-800/60"></tbody>
+            </table>
+          </div>
+
+          <!-- Área de Swap -->
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-3">
+            <h4 class="text-xs font-bold text-rose-400 uppercase mb-2">Área de Swap (Disco)</h4>
+            <div id="pag-swap-list" class="flex flex-wrap gap-1.5 font-mono-code text-xs"></div>
+          </div>
+        </div>
+
+        <!-- Tablas de Páginas por Proceso -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3">
+          <h4 class="text-xs font-bold text-sky-400 uppercase mb-2">Tablas de Páginas por Proceso</h4>
+          <div id="pag-page-tables" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3"></div>
+        </div>
+
+        <!-- Métricas Paginación -->
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-3">
+            <div class="text-[11px] text-slate-400">TLB Hit Rate</div>
+            <div id="pag-hit-rate" class="text-lg font-bold font-mono-code text-amber-400 mt-0.5">0.0%</div>
+          </div>
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-3">
+            <div class="text-[11px] text-slate-400">Fallos de Página</div>
+            <div id="pag-faults" class="text-lg font-bold font-mono-code text-rose-400 mt-0.5">0</div>
+          </div>
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-3">
+            <div class="text-[11px] text-slate-400">Page-in</div>
+            <div id="pag-page-ins" class="text-lg font-bold font-mono-code text-purple-400 mt-0.5">0 págs</div>
+          </div>
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-3">
+            <div class="text-[11px] text-slate-400">Page-out</div>
+            <div id="pag-page-outs" class="text-lg font-bold font-mono-code text-fuchsia-400 mt-0.5">0 págs</div>
+          </div>
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-3">
+            <div class="text-[11px] text-slate-400">Tráfico total Swap</div>
+            <div id="pag-swap-traffic" class="text-lg font-bold font-mono-code text-purple-400 mt-0.5">0 págs</div>
+          </div>
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-3">
+            <div class="text-[11px] text-slate-400">Tiempo Efectivo (EAT)</div>
+            <div id="pag-eat" class="text-lg font-bold font-mono-code text-emerald-400 mt-0.5">0 ns</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================= -->
+      <!-- MÓDULO 4: SEGMENTACIÓN                                    -->
+      <!-- ========================================================= -->
+      <section id="mod-seg" class="module-section hidden flex flex-col gap-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <h2 class="text-sm font-bold text-white flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-amber-500"></span> Configuración de Memoria Segmentada
+            </h2>
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+              <label class="text-slate-400">Política:
+                <select id="seg-policy" onchange="resetSeg(false)" class="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-white font-semibold ml-1">
+                  <option value="first">First Fit</option>
+                  <option value="best">Best Fit</option>
+                  <option value="worst">Worst Fit</option>
+                </select>
+              </label>
+              <label class="text-slate-400">RAM Total (B):
+                <input id="seg-total" type="number" min="512" max="16384" step="256" value="2048" onchange="resetSeg(false)" class="w-20 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-white font-mono-code ml-1" />
+              </label>
+              <button onclick="compactSegments()" class="px-2.5 py-1 rounded-lg bg-amber-600/20 text-amber-300 border border-amber-500/40 hover:bg-amber-600/30 font-semibold">
+                🗜️ Compactar
+              </button>
+            </div>
+          </div>
+
+          <!-- Traductor Manual de Dirección Lógica (PID, Segmento, Desplazamiento) -->
+          <div class="flex flex-wrap items-end gap-2 pt-2 border-t border-slate-800">
+            <div>
+              <label class="block text-[11px] text-slate-400 mb-0.5">Proceso</label>
+              <select id="seg-test-pid" class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white"></select>
+            </div>
+            <div>
+              <label class="block text-[11px] text-slate-400 mb-0.5">N° Segmento</label>
+              <input id="seg-test-num" type="number" min="0" max="5" value="0" class="w-20 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white font-mono-code" />
+            </div>
+            <div>
+              <label class="block text-[11px] text-slate-400 mb-0.5">Desplazamiento (Offset)</label>
+              <input id="seg-test-off" type="number" min="0" value="120" class="w-28 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white font-mono-code" />
+            </div>
+            <button onclick="translateSegmentManual()" class="px-3 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold transition">
+              🔍 Traducir Dirección
+            </button>
+          </div>
+
+          <div id="seg-translation-result" class="mt-3 bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs font-mono-code text-slate-400">
+            Selecciona un proceso, segmento y desplazamiento (o avanza paso a paso en la cola de accesos).
+          </div>
+        </div>
+
+        <!-- Mapa Visual de Segmentos en Memoria -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Mapa de Memoria Física Segmentada</h3>
+            <span id="seg-ext-frag" class="text-xs font-mono-code text-rose-400">Frag. Externa: 0 B</span>
+          </div>
+          <div id="seg-visual-bar" class="w-full h-14 bg-slate-950 border border-slate-700 rounded-lg overflow-hidden flex"></div>
+        </div>
+
+        <!-- Tablas de Segmentos por Proceso -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Tablas de Segmentos (Base y Límite)</h3>
+          <div id="seg-tables-container" class="grid grid-cols-1 md:grid-cols-2 gap-3"></div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- RIGHT COLUMN (4 cols): TABLA DE PROCESOS Y ESTADOS (SIEMPRE VISIBLE) -->
+    <aside class="lg:col-span-4 flex flex-col gap-4">
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow sticky top-20">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-bold text-white flex items-center gap-2">
+            <span>📋</span> Tabla de Procesos y Estados
+          </h2>
+          <span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+            Tiempo Real
+          </span>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead>
+              <tr class="text-slate-400 border-b border-slate-800">
+                <th class="py-2 px-1.5">PID</th>
+                <th class="py-2 px-1.5">Nombre</th>
+                <th class="py-2 px-1.5">Estado</th>
+                <th class="py-2 px-1.5" id="proc-table-extra-col">Info</th>
+              </tr>
+            </thead>
+            <tbody id="global-process-table" class="divide-y divide-slate-800/70">
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Detalle de métricas por proceso (CPU) -->
+        <div id="cpu-proc-details" class="mt-4 pt-3 border-t border-slate-800">
+          <h3 class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Tiempos por Proceso (CPU)</h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-[11px] font-mono-code">
+              <thead>
+                <tr class="text-slate-400 border-b border-slate-800">
+                  <th class="py-1">Proc</th>
+                  <th class="py-1">Lleg</th>
+                  <th class="py-1">Ráf</th>
+                  <th class="py-1">Rest</th>
+                  <th class="py-1">Esp</th>
+                  <th class="py-1">Ret</th>
+                </tr>
+              </thead>
+              <tbody id="cpu-metrics-tbody" class="divide-y divide-slate-800/60"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Registro de eventos del sistema (Kernel Log) -->
+        <div class="mt-4 pt-3 border-t border-slate-800">
+          <h3 class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Bitácora del Kernel</h3>
+          <div id="kernel-log" class="bg-slate-950 border border-slate-800 rounded-lg p-2.5 h-44 overflow-y-auto font-mono-code text-[11px] space-y-1 text-slate-300">
+          </div>
+        </div>
+      </div>
+    </aside>
+
+  </main>
+
+  <!-- MODAL DE COMPARATIVA ENTRE POLÍTICAS -->
+  <div id="compare-modal" class="fixed inset-0 bg-black/75 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-3xl w-full p-5 shadow-2xl">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div>
+          <h3 class="text-base font-bold text-white" id="compare-title">Comparativa de Políticas</h3>
+          <p class="text-xs text-slate-400" id="compare-subtitle">Ejecución automática del escenario actual bajo distintas políticas</p>
+        </div>
+        <button onclick="closeCompareModal()" class="text-slate-400 hover:text-white text-lg font-bold px-2">✕</button>
+      </div>
+
+      <div id="compare-body" class="py-4 overflow-x-auto">
+      </div>
+
+      <div class="pt-3 border-t border-slate-800 flex justify-end">
+        <button onclick="closeCompareModal()" class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold">
+          Cerrar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/simulator.js"></script>
+</body>
+</html>
